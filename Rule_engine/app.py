@@ -15,49 +15,36 @@ class Node:
     def evaluate(self, data):
         if self.type == "operand":
             attr, operator, val = self.value
-
-            # Handle numeric conversion if the value is a string and is numeric
-            if isinstance(val, str) and val.isnumeric():
-                val = int(val)
-
-            # Print debugging information
-            print(f"Evaluating operand: {attr} {operator} {val} against {data[attr]}")
-
-            # Perform comparisons
-            if operator == "==":
-                result = data[attr] == val
-            elif operator == "!=":
-                result = data[attr] != val
-            elif operator == "<":
-                result = data[attr] < val
-            elif operator == "<=":
-                result = data[attr] <= val
-            elif operator == ">":
-                result = data[attr] > val
-            elif operator == ">=":
-                result = data[attr] >= val
-            else:
-                result = False
+            if isinstance(val, str) and val.isdigit():
+                val = int(val)  # Convert numeric strings to integers
             
-            print(f"Result for {attr} {operator} {val}: {result}")
-            return result
+            # Comparison operations
+            if operator == "==":
+                return data.get(attr) == val
+            elif operator == "!=":
+                return data.get(attr) != val
+            elif operator == "<":
+                return data.get(attr) < val
+            elif operator == "<=":
+                return data.get(attr) <= val
+            elif operator == ">":
+                return data.get(attr) > val
+            elif operator == ">=":
+                return data.get(attr) >= val
+            return False
 
         elif self.type == "operator":
             left_result = self.left.evaluate(data) if self.left else False
             right_result = self.right.evaluate(data) if self.right else False
-            
-            # Print debugging information
-            print(f"Evaluating operator: {self.value}, left result: {left_result}, right result: {right_result}")
 
             if self.value == "AND":
                 return left_result and right_result
             elif self.value == "OR":
                 return left_result or right_result
 
-        return False  # Default return value if not handled
+        return False
 
     def to_dict(self):
-        """Convert the node to a dictionary for JSON serialization."""
         if self.type == "operand":
             return {
                 "type": self.type,
@@ -73,7 +60,6 @@ class Node:
 
 # Function to create AST from rule string
 def create_ast(rule_string):
-    # A simple parser for demonstration (might need enhancement)
     tokens = re.split(r'(\s+|\(|\)|AND|OR)', rule_string)
     tokens = [token.strip() for token in tokens if token.strip()]
 
@@ -91,10 +77,11 @@ def create_ast(rule_string):
         elif token == ')':
             return None, index + 1
         else:
-            # Assuming token is a condition like "age > 30"
             match = re.match(r'(\w+)\s*([<>]=?|==|!=)\s*(.+)', token)
             if match:
                 attribute, operator, value = match.groups()
+                if value.isdigit():
+                    value = int(value)  # Convert to int if it’s a number
                 return Node("operand", value=(attribute, operator, value)), index + 1
 
         return None, index
@@ -108,13 +95,27 @@ def create_rule():
     rule_string = request.json.get('rule_string')
     ast = create_ast(rule_string)
 
-    # Store rule in the database
-    conn = get_db_connection()
-    conn.execute('INSERT INTO rules (rule_string) VALUES (?)', (rule_string,))
-    conn.commit()
-    conn.close()
-    
-    return jsonify({"message": "Rule created", "ast": ast.to_dict()}), 201
+    # Check if the AST was created successfully
+    if ast is None:
+        return jsonify({"error": "Invalid rule syntax"}), 400
+
+    try:
+        # Insert rule into the database
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('INSERT INTO rules (rule_string) VALUES (?)', (rule_string,))
+        rule_id = cursor.lastrowid  # Get the ID of the newly created rule
+        conn.commit()
+        conn.close()
+        
+        # Return success response with the AST and rule ID
+        return jsonify({"message": "Rule created", "rule_id": rule_id, "ast": ast.to_dict()}), 201
+
+    except Exception as e:
+        # If an error occurs, log it and return a failure response
+        print(f"Error inserting rule: {e}")
+        return jsonify({"error": "Failed to create rule in the database"}), 500
+
 
 # API to evaluate rule
 @app.route('/evaluate_rule', methods=['POST'])
@@ -133,12 +134,8 @@ def evaluate_rule():
     # Create AST from the rule string
     ast = create_ast(rule['rule_string'])
 
-    # Print the rule being evaluated
-    print(f"Evaluating rule: {rule['rule_string']} with data: {user_data}")
-
     # Evaluate the AST against user data
     result = ast.evaluate(user_data)
-    print(f"Final evaluation result: {result}")  # Debugging output
     return jsonify({"eligible": result}), 200
 
 # Helper function to connect to the database
@@ -160,5 +157,5 @@ def init_db():
     conn.close()
 
 if __name__ == '__main__':
-    init_db()  # Initialize the database
-    app.run(debug=True)  # Start the Flask application
+    init_db()
+    app.run(debug=True)
