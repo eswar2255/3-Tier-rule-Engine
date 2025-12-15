@@ -156,6 +156,7 @@ def init_db():
     conn.commit()
     conn.close()
 
+#I have added this line to test the merging concept
 if __name__ == '__main__':
     init_db()
     app.run(debug=True)
