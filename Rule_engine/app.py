@@ -157,6 +157,7 @@ def init_db():
     conn.close()
 
 #I have added this line to test the merging concept
+#THis is main
 if __name__ == '__main__':
     init_db()
     app.run(debug=True)
